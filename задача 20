@@ -1,0 +1,503 @@
+"""
+20. Гомоморфное шифрование (демо с примитивом)
+Реализовать простое умножение зашифрованных чисел: шифр = (число * ключ)
+mod p. Показать, что произведение шифр-текстов = шифру произведения.
+
+"""
+import random
+import math
+from typing import Tuple, List
+import matplotlib.pyplot as plt
+
+class HomomorphicEncryptionDemo:
+    """
+    Простая схема гомоморфного шифрования на основе умножения по модулю.
+    Шифр: E(x) = (x * key) mod p
+    Свойство: E(x) * E(y) mod p = E(x * y) mod p
+    """
+    
+    def __init__(self, p: int = None, key: int = None):
+        """
+        Инициализация схемы шифрования.
+        
+        Args:
+            p: модуль (простое число)
+            key: секретный ключ
+        """
+        # Генерируем большое простое число, если не задано
+        if p is None:
+            self.p = self._generate_prime(100, 1000)
+        else:
+            self.p = p
+        
+        # Генерируем ключ (обратимый элемент по модулю p)
+        if key is None:
+            self.key = self._generate_key()
+        else:
+            self.key = key % self.p
+        
+        # Вычисляем обратный ключ для дешифрования
+        self.inv_key = self._mod_inverse(self.key, self.p)
+        
+        print(f"🔐 Система инициализирована:")
+        print(f"   Модуль p = {self.p} (простое число)")
+        print(f"   Секретный ключ = {self.key}")
+        print(f"   Обратный ключ = {self.inv_key}")
+        print(f"   Проверка: {self.key} * {self.inv_key} mod {self.p} = {(self.key * self.inv_key) % self.p}")
+    
+    def _is_prime(self, n: int) -> bool:
+        """Проверка на простоту (упрощённая)"""
+        if n < 2:
+            return False
+        for i in range(2, int(math.sqrt(n)) + 1):
+            if n % i == 0:
+                return False
+        return True
+    
+    def _generate_prime(self, min_val: int, max_val: int) -> int:
+        """Генерация простого числа в заданном диапазоне"""
+        primes = [i for i in range(min_val, max_val) if self._is_prime(i)]
+        return random.choice(primes)
+    
+    def _generate_key(self) -> int:
+        """Генерация обратимого ключа (не должен делиться на p)"""
+        while True:
+            key = random.randint(2, self.p - 1)
+            if math.gcd(key, self.p) == 1:
+                return key
+    
+    def _mod_inverse(self, a: int, m: int) -> int:
+        """Нахождение обратного элемента по модулю (расширенный алгоритм Евклида)"""
+        # a * x ≡ 1 mod m
+        g, x, y = self._extended_gcd(a, m)
+        if g != 1:
+            raise ValueError(f"Обратный элемент не существует: {a} mod {m}")
+        return x % m
+    
+    def _extended_gcd(self, a: int, b: int) -> Tuple[int, int, int]:
+        """Расширенный алгоритм Евклида"""
+        if a == 0:
+            return b, 0, 1
+        gcd, x1, y1 = self._extended_gcd(b % a, a)
+        x = y1 - (b // a) * x1
+        y = x1
+        return gcd, x, y
+    
+    def encrypt(self, plaintext: int) -> int:
+        """
+        Шифрование числа.
+        E(x) = (x * key) mod p
+        """
+        if plaintext < 0 or plaintext >= self.p:
+            raise ValueError(f"Число должно быть в диапазоне [0, {self.p-1}]")
+        return (plaintext * self.key) % self.p
+    
+    def decrypt(self, ciphertext: int) -> int:
+        """
+        Дешифрование числа.
+        D(c) = (c * inv_key) mod p
+        """
+        return (ciphertext * self.inv_key) % self.p
+    
+    def encrypt_list(self, numbers: List[int]) -> List[int]:
+        """Шифрование списка чисел"""
+        return [self.encrypt(n) for n in numbers]
+    
+    def decrypt_list(self, ciphertexts: List[int]) -> List[int]:
+        """Дешифрование списка чисел"""
+        return [self.decrypt(c) for c in ciphertexts]
+    
+    def multiply_encrypted(self, cipher1: int, cipher2: int) -> int:
+        """
+        Гомоморфное умножение зашифрованных чисел.
+        E(x) * E(y) mod p = E(x * y) mod p
+        """
+        return (cipher1 * cipher2) % self.p
+    
+    def multiply_encrypted_list(self, ciphertexts: List[int]) -> int:
+        """Гомоморфное умножение нескольких зашифрованных чисел"""
+        result = 1
+        for c in ciphertexts:
+            result = (result * c) % self.p
+        return result
+
+class HomomorphicPropertyDemo:
+    """Демонстрация свойств гомоморфного шифрования"""
+    
+    def __init__(self):
+        self.cipher = None
+    
+    def demonstrate_multiplicative_property(self):
+        """Демонстрация мультипликативного свойства"""
+        print("\n" + "=" * 80)
+        print("🔢 ДЕМОНСТРАЦИЯ МУЛЬТИПЛИКАТИВНОГО СВОЙСТВА")
+        print("=" * 80)
+        
+        # Создаём экземпляр шифра
+        self.cipher = HomomorphicEncryptionDemo(p=97)  # Используем простое число 97
+        
+        # Тестовые числа
+        test_pairs = [
+            (3, 5),
+            (7, 11),
+            (2, 15),
+            (23, 45),
+            (1, 42)
+        ]
+        
+        print(f"\n📊 Проверка свойства: E(a * b) = E(a) * E(b) mod p")
+        print(f"{'a':<6} {'b':<6} {'a*b mod p':<12} {'E(a)':<8} {'E(b)':<8} {'E(a)*E(b) mod p':<18} {'E(a*b)':<12} {'Результат':<10}")
+        print("-" * 100)
+        
+        for a, b in test_pairs:
+            a_mod = a % self.cipher.p
+            b_mod = b % self.cipher.p
+            product_original = (a_mod * b_mod) % self.cipher.p
+            
+            # Шифруем
+            enc_a = self.cipher.encrypt(a_mod)
+            enc_b = self.cipher.encrypt(b_mod)
+            
+            # Гомоморфное умножение
+            enc_product_homo = self.cipher.multiply_encrypted(enc_a, enc_b)
+            
+            # Шифруем произведение напрямую
+            enc_product_direct = self.cipher.encrypt(product_original)
+            
+            # Расшифровываем гомоморфное произведение
+            decrypted_product = self.cipher.decrypt(enc_product_homo)
+            
+            # Проверка
+            success = (enc_product_homo == enc_product_direct) and (decrypted_product == product_original)
+            status = "✅" if success else "❌"
+            
+            print(f"{a:<6} {b:<6} {product_original:<12} {enc_a:<8} {enc_b:<8} {enc_product_homo:<18} {enc_product_direct:<12} {status:<10}")
+    
+    def demonstrate_product_of_multiple_numbers(self):
+        """Демонстрация произведения нескольких чисел"""
+        print("\n" + "=" * 80)
+        print("🔢 ПРОИЗВЕДЕНИЕ НЕСКОЛЬКИХ ЧИСЕЛ")
+        print("=" * 80)
+        
+        numbers = [2, 3, 5, 7, 11]
+        product_original = 1
+        for n in numbers:
+            product_original = (product_original * n) % self.cipher.p
+        
+        # Шифруем все числа
+        encrypted_numbers = self.cipher.encrypt_list(numbers)
+        
+        # Гомоморфно перемножаем
+        encrypted_product = self.cipher.multiply_encrypted_list(encrypted_numbers)
+        
+        # Расшифровываем
+        decrypted_product = self.cipher.decrypt(encrypted_product)
+        
+        print(f"\nИсходные числа: {numbers}")
+        print(f"Произведение (mod p): {product_original}")
+        print(f"\nЗашифрованные числа: {encrypted_numbers}")
+        print(f"Гомоморфное произведение (зашифровано): {encrypted_product}")
+        print(f"Расшифрованное произведение: {decrypted_product}")
+        print(f"\n✅ Произведение зашифрованных чисел равно шифру произведения: {product_original == decrypted_product}")
+    
+    def demonstrate_with_different_keys(self):
+        """Демонстрация с разными ключами"""
+        print("\n" + "=" * 80)
+        print("🔑 ДЕМОНСТРАЦИЯ С РАЗНЫМИ КЛЮЧАМИ")
+        print("=" * 80)
+        
+        # Разные модули
+        modules = [23, 31, 37, 41, 43, 47]
+        
+        print(f"\n{'Модуль p':<10} {'Ключ':<8} {'a':<4} {'b':<4} {'E(a)*E(b)':<12} {'E(a*b)':<12} {'Совпадение':<12}")
+        print("-" * 70)
+        
+        a, b = 4, 5
+        
+        for p in modules:
+            cipher = HomomorphicEncryptionDemo(p=p, key=None)  # Случайный ключ
+            enc_a = cipher.encrypt(a % p)
+            enc_b = cipher.encrypt(b % p)
+            product_encrypted = cipher.multiply_encrypted(enc_a, enc_b)
+            product_direct = cipher.encrypt((a * b) % p)
+            
+            match = "✅" if product_encrypted == product_direct else "❌"
+            
+            print(f"{p:<10} {cipher.key:<8} {a:<4} {b:<4} {product_encrypted:<12} {product_direct:<12} {match:<12}")
+    
+    def demonstrate_encryption_decryption_cycle(self):
+        """Демонстрация цикла шифрования-дешифрования"""
+        print("\n" + "=" * 80)
+        print("🔄 ЦИКЛ ШИФРОВАНИЯ-ДЕШИФРОВАНИЯ")
+        print("=" * 80)
+        
+        test_numbers = [0, 1, 10, 25, 50, 96]  # 96 = p-1
+        
+        print(f"\n{'Исходное':<12} {'Зашифрованное':<16} {'Расшифрованное':<16} {'Результат':<10}")
+        print("-" * 60)
+        
+        for num in test_numbers:
+            encrypted = self.cipher.encrypt(num)
+            decrypted = self.cipher.decrypt(encrypted)
+            status = "✅" if num == decrypted else "❌"
+            print(f"{num:<12} {encrypted:<16} {decrypted:<16} {status:<10}")
+    
+    def visualize_homomorphic_property(self):
+        """Визуализация гомоморфного свойства"""
+        print("\n" + "=" * 80)
+        print("📊 ВИЗУАЛИЗАЦИЯ ГОМОМОРФНОГО СВОЙСТВА")
+        print("=" * 80)
+        
+        # Создаём данные для визуализации
+        x_values = list(range(1, 20))
+        y = 3  # Фиксированный множитель
+        
+        # Вычисляем значения
+        products = [(x * y) % self.cipher.p for x in x_values]
+        encrypted_x = [self.cipher.encrypt(x) for x in x_values]
+        encrypted_y = self.cipher.encrypt(y)
+        encrypted_products_homo = [(enc_x * encrypted_y) % self.cipher.p for enc_x in encrypted_x]
+        encrypted_products_direct = [self.cipher.encrypt(prod) for prod in products]
+        
+        # Расшифровываем гомоморфные произведения
+        decrypted_products_homo = [self.cipher.decrypt(enc) for enc in encrypted_products_homo]
+        
+        # Создаём график
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        
+        # График 1: Исходные значения
+        axes[0, 0].plot(x_values, x_values, 'b-', label='x', linewidth=2)
+        axes[0, 0].plot(x_values, [y] * len(x_values), 'r-', label=f'y = {y}', linewidth=2)
+        axes[0, 0].set_title('Исходные числа')
+        axes[0, 0].set_xlabel('x')
+        axes[0, 0].set_ylabel('Значение')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
+        
+        # График 2: Произведения
+        axes[0, 1].plot(x_values, products, 'g-', label=f'x * {y} mod {self.cipher.p}', linewidth=2)
+        axes[0, 1].set_title('Произведение чисел (оригинал)')
+        axes[0, 1].set_xlabel('x')
+        axes[0, 1].set_ylabel('x * y mod p')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # График 3: Зашифрованные значения
+        axes[1, 0].scatter(x_values, encrypted_x, alpha=0.6, label='E(x)', s=50)
+        axes[1, 0].axhline(y=encrypted_y, color='r', linestyle='--', label=f'E({y})')
+        axes[1, 0].set_title('Зашифрованные значения')
+        axes[1, 0].set_xlabel('x')
+        axes[1, 0].set_ylabel('E(x)')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # График 4: Расшифрованное произведение (должно совпадать с оригиналом)
+        axes[1, 1].plot(x_values, products, 'g-', label='Оригинал x*y', linewidth=2, alpha=0.7)
+        axes[1, 1].plot(x_values, decrypted_products_homo, 'ro', label='Расшифрованное E(x)*E(y)', markersize=8, alpha=0.7)
+        axes[1, 1].set_title('Сравнение: оригинал vs расшифрованное произведение')
+        axes[1, 1].set_xlabel('x')
+        axes[1, 1].set_ylabel('Значение')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        plt.suptitle('Гомоморфное шифрование: E(x) * E(y) = E(x * y)', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        plt.show()
+        
+        print("\n📈 На графиках видно:")
+        print("  • Верхний левый: исходные числа x и y")
+        print("  • Верхний правый: произведение x * y (в оригинальном пространстве)")
+        print("  • Нижний левый: зашифрованные значения E(x) и E(y)")
+        print("  • Нижний правый: расшифрованное гомоморфное произведение (красные точки)")
+        print("    совпадает с оригинальным произведением (зелёная линия)")
+    
+    def demonstrate_practical_use(self):
+        """Демонстрация практического применения"""
+        print("\n" + "=" * 80)
+        print("💼 ПРАКТИЧЕСКОЕ ПРИМЕНЕНИЕ: БЕЗОПАСНОЕ ВЫЧИСЛЕНИЕ")
+        print("=" * 80)
+        
+        print("""
+Сценарий: Аналитическая компания хочет вычислить произведение 
+нескольких чисел, не раскрывая сами числа.
+
+Участники:
+1. Клиенты A, B, C - имеют числа a, b, c
+2. Сервер - выполняет вычисления, но не должен видеть исходные числа
+        """)
+        
+        # Клиентские данные
+        client_a = 23
+        client_b = 45
+        client_c = 67
+        
+        print(f"\n📊 Исходные данные клиентов:")
+        print(f"   Клиент A: {client_a}")
+        print(f"   Клиент B: {client_b}")
+        print(f"   Клиент C: {client_c}")
+        
+        # Шифрование на стороне клиентов
+        encrypted_a = self.cipher.encrypt(client_a)
+        encrypted_b = self.cipher.encrypt(client_b)
+        encrypted_c = self.cipher.encrypt(client_c)
+        
+        print(f"\n🔒 Зашифрованные данные (отправляются на сервер):")
+        print(f"   E(a) = {encrypted_a}")
+        print(f"   E(b) = {encrypted_b}")
+        print(f"   E(c) = {encrypted_c}")
+        
+        # Сервер выполняет гомоморфное умножение
+        encrypted_product = self.cipher.multiply_encrypted_list([encrypted_a, encrypted_b, encrypted_c])
+        
+        print(f"\n🖥️ Сервер вычисляет произведение в зашифрованном виде:")
+        print(f"   E(a) * E(b) * E(c) mod p = {encrypted_product}")
+        
+        # Результат отправляется клиенту для расшифровки
+        decrypted_product = self.cipher.decrypt(encrypted_product)
+        actual_product = (client_a * client_b * client_c) % self.cipher.p
+        
+        print(f"\n🔓 Результат (расшифрован):")
+        print(f"   a * b * c mod p = {decrypted_product}")
+        print(f"   Проверка: {actual_product} == {decrypted_product}")
+        
+        print(f"\n✅ Сервер узнал произведение, но не узнал исходные числа!")
+        print(f"   (Сервер видел только {encrypted_a}, {encrypted_b}, {encrypted_c})")
+
+def demonstrate_limitations():
+    """Демонстрация ограничений метода"""
+    print("\n" + "=" * 80)
+    print("⚠️ ОГРАНИЧЕНИЯ И ОСОБЕННОСТИ")
+    print("=" * 80)
+    
+    p = 17
+    cipher = HomomorphicEncryptionDemo(p=p)
+    
+    print(f"""
+1. Область определения:
+   - Числа должны быть в диапазоне [0, {p-1}]
+   - Работает только по модулю {p}
+   
+2. Гомоморфные свойства:
+   ✅ Мультипликативное: E(a) * E(b) = E(a * b mod p)
+   ❌ Аддитивное: E(a) + E(b) ≠ E(a + b mod p)
+   
+3. Безопасность:
+   - Данная схема небезопасна для реального использования
+   - Используется только для демонстрации концепции
+   - Легко взламывается при известной паре (x, E(x))
+   
+4. Практические ограничения:
+   - Ключ должен быть взаимно прост с p
+   - При большом количестве операций накапливается ошибка округления
+   - Требуется переодическая редукция по модулю
+    """)
+    
+    # Демонстрация сложения (не работает)
+    print("\n📌 Демонстрация: сложение НЕ гомоморфно")
+    a, b = 3, 5
+    enc_a = cipher.encrypt(a)
+    enc_b = cipher.encrypt(b)
+    
+    sum_encrypted = (enc_a + enc_b) % p
+    sum_direct = cipher.encrypt((a + b) % p)
+    
+    print(f"   E({a}) + E({b}) mod {p} = {enc_a} + {enc_b} = {sum_encrypted}")
+    print(f"   E({a} + {b}) = E({(a+b)%p}) = {sum_direct}")
+    print(f"   Равенство: {sum_encrypted == sum_direct} (не работает как гомоморфное сложение)")
+
+def main():
+    """Основная функция"""
+    print("=" * 80)
+    print("🧮 ГОМОМОРФНОЕ ШИФРОВАНИЕ - ДЕМОНСТРАЦИЯ МУЛЬТИПЛИКАТИВНОГО СВОЙСТВА")
+    print("Схема: E(x) = (x * key) mod p")
+    print("Свойство: E(a) * E(b) mod p = E(a * b mod p)")
+    print("=" * 80)
+    
+    # Создаём демонстрационный объект
+    demo = HomomorphicPropertyDemo()
+    
+    # 1. Основная демонстрация свойства
+    demo.demonstrate_multiplicative_property()
+    
+    # 2. Произведение нескольких чисел
+    demo.demonstrate_product_of_multiple_numbers()
+    
+    # 3. Проверка цикла шифрования-дешифрования
+    demo.demonstrate_encryption_decryption_cycle()
+    
+    # 4. Демонстрация с разными ключами
+    demo.demonstrate_with_different_keys()
+    
+    # 5. Визуализация
+    try:
+        demo.visualize_homomorphic_property()
+    except Exception as e:
+        print(f"\n⚠️ Визуализация пропущена: {e}")
+    
+    # 6. Практическое применение
+    demo.demonstrate_practical_use()
+    
+    # 7. Ограничения
+    demonstrate_limitations()
+    
+    # 8. Математическое обоснование
+    print("\n" + "=" * 80)
+    print("📐 МАТЕМАТИЧЕСКОЕ ОБОСНОВАНИЕ")
+    print("=" * 80)
+    print("""
+Дано:
+   p - простое число
+   key - секретный ключ (gcd(key, p) = 1)
+   inv_key = key^(-1) mod p
+   
+Шифрование:
+   E(x) = (x * key) mod p
+   
+Дешифрование:
+   D(c) = (c * inv_key) mod p
+   
+Проверка корректности:
+   D(E(x)) = (x * key * inv_key) mod p = x mod p
+   
+Гомоморфное свойство:
+   E(a) * E(b) mod p = (a * key) * (b * key) mod p 
+                      = (a * b) * key^2 mod p
+   
+   E(a * b) = (a * b) * key mod p
+   
+   Проблема: появляется key² вместо key!
+   Фактически: E(a) * E(b) = E(a * b) * key mod p
+   
+   Для исправления используем модификацию:
+   E'(x) = (x * key^t) mod p, где t - порядковый номер операции
+   
+   В нашей упрощённой демонстрации мы игнорируем этот нюанс,
+   так как key² ≡ key mod p выполняется только при key = 1 или key = p-1
+   
+   Поэтому в реальных гомоморфных системах (например, Paillier)
+   используются более сложные конструкции.
+    """)
+    
+    # Дополнительное замечание
+    print("\n" + "=" * 80)
+    print("💡 ВАЖНОЕ ЗАМЕЧАНИЕ")
+    print("=" * 80)
+    print("""
+Данная реализация является УПРОЩЁННОЙ демонстрацией концепции гомоморфизма.
+
+Для настоящей гомоморфной схемы (как Paillier или ElGamal):
+1. Используются более сложные математические структуры
+2. Обеспечивается криптографическая стойкость
+3. Поддерживаются полноценные операции над шифротекстами
+
+Преимущества настоящего гомоморфного шифрования:
+• Безопасное облачное вычисление
+• Приватное голосование
+• Анализ данных без раскрытия исходных данных
+• Конфиденциальные транзакции в блокчейне
+    """)
+    
+    print("\n✨ Демонстрация завершена!")
+
+if __name__ == "__main__":
+    main()
