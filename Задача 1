@@ -1,0 +1,205 @@
+"""
+1. Генератор паролей с оценкой стойкости
+Напишите функцию, которая генерирует пароль заданной длины (буквы, цифры, 
+символы). Вторая функция вычисляет энтропию пароля и оценивает его
+стойкость (слабый/средний/сильный).
+
+"""
+
+import random
+import string
+import math
+
+def generate_password(length=12, use_letters=True, use_digits=True, use_symbols=True):
+    """
+    Генерирует случайный пароль заданной длины.
+    
+    Args:
+        length: длина пароля (по умолчанию 12)
+        use_letters: использовать ли буквы (латиница)
+        use_digits: использовать ли цифры
+        use_symbols: использовать ли специальные символы
+    
+    Returns:
+        str: сгенерированный пароль
+    """
+    if not (use_letters or use_digits or use_symbols):
+        raise ValueError("Должен быть выбран хотя бы один тип символов")
+    
+    # Наборы символов
+    chars = ''
+    if use_letters:
+        chars += string.ascii_letters  # алфавит латинский
+    if use_digits:
+        chars += string.digits  # 0-9
+    if use_symbols:
+        chars += string.punctuation  # символы 
+    
+    # Генерация пароля
+    password = ''.join(random.choice(chars) for _ in range(length))
+    return password
+
+def calculate_entropy(password):
+    """
+    Вычисляет энтропию пароля в битах.
+    
+    Args:
+        password: строка пароля
+    
+    Returns:
+        float: энтропия в битах
+    """
+    # Определяем размер пула символов
+    pool_size = 0
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_symbol = any(c in string.punctuation for c in password)
+    
+    if has_lower or has_upper:
+        pool_size += 26  # a-z или A-Z (для простоты считаем по 26)
+        if has_lower and has_upper:
+            pool_size += 26  # добавляем второй регистр
+    else:
+        if has_lower:
+            pool_size += 26
+        if has_upper:
+            pool_size += 26
+    
+    if has_digit:
+        pool_size += 10
+    
+    if has_symbol:
+        pool_size += len(string.punctuation)
+    
+    # Формула энтропии: E = log2(размер_пула ^ длина)
+    # или E = длина * log2(размер_пула)
+    if pool_size == 0:
+        return 0
+    
+    entropy = len(password) * math.log2(pool_size)
+    return entropy
+
+def assess_password_strength(password):
+    """
+    Оценивает стойкость пароля.
+    
+    Args:
+        password: строка пароля
+    
+    Returns:
+        tuple: (энтропия, оценка, рекомендации)
+    """
+    entropy = calculate_entropy(password)
+    length = len(password)
+    
+    # Проверка на простые паттерны
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_symbol = any(c in string.punctuation for c in password)
+    
+    # Базовые критерии
+    variety_score = sum([has_lower, has_upper, has_digit, has_symbol])
+    
+    # Оценка стойкости
+    if entropy < 40:
+        strength = "СЛАБЫЙ"
+        recommendation = "Пароль слишком короткий или использует мало типов символов. Используйте минимум 8 символов, включая буквы в разных регистрах, цифры и спецсимволы."
+    elif entropy < 60:
+        strength = "СРЕДНИЙ"
+        recommendation = "Неплохой пароль, но можно усилить. Добавьте больше символов или используйте больше типов символов."
+    elif entropy < 80:
+        strength = "ХОРОШИЙ"
+        recommendation = "Хороший пароль, подходит для большинства случаев."
+    else:
+        strength = "СИЛЬНЫЙ"
+        recommendation = "Отличный пароль! Очень высокая стойкость к взлому."
+    
+    # Дополнительные проверки
+    if length < 8:
+        strength = "СЛАБЫЙ"
+        recommendation = "Пароль слишком короткий! Используйте минимум 8 символов."
+    elif length < 10 and strength != "СЛАБЫЙ":
+        strength = "СРЕДНИЙ"
+    
+    if variety_score < 3 and length < 12:
+        if strength == "ХОРОШИЙ":
+            strength = "СРЕДНИЙ"
+        elif strength == "СИЛЬНЫЙ":
+            strength = "ХОРОШИЙ"
+    
+    return entropy, strength, recommendation
+
+def main():
+    """Пример использования"""
+    print("=" * 60)
+    print("ГЕНЕРАТОР ПАРОЛЕЙ С ОЦЕНКОЙ СТОЙКОСТИ")
+    print("=" * 60)
+    
+    while True:
+        print("\nВыберите действие:")
+        print("1 - Сгенерировать новый пароль")
+        print("2 - Проверить свой пароль")
+        print("3 - Выйти")
+        
+        choice = input("Ваш выбор (1/2/3): ").strip()
+        
+        if choice == '1':
+            try:
+                length = int(input("Введите длину пароля (рекомендуется 12+): "))
+                if length < 1:
+                    print("Длина должна быть положительным числом!")
+                    continue
+                
+                use_letters = input("Использовать буквы? (y/n, по умолчанию y): ").lower() != 'n'
+                use_digits = input("Использовать цифры? (y/n, по умолчанию y): ").lower() != 'n'
+                use_symbols = input("Использовать символы? (y/n, по умолчанию y): ").lower() != 'n'
+                
+                password = generate_password(length, use_letters, use_digits, use_symbols)
+                entropy, strength, recommendation = assess_password_strength(password)
+                
+                print("\n" + "=" * 60)
+                print(f"Сгенерированный пароль: {password}")
+                print(f"Длина: {len(password)} символов")
+                print(f"Энтропия: {entropy:.2f} бит")
+                print(f"Стойкость: {strength}")
+                print(f"Рекомендация: {recommendation}")
+                print("=" * 60)
+                
+            except ValueError as e:
+                print(f"Ошибка: {e}")
+        
+        elif choice == '2':
+            password = input("Введите пароль для проверки: ")
+            entropy, strength, recommendation = assess_password_strength(password)
+            
+            print("\n" + "=" * 60)
+            print(f"Проверяемый пароль: {password}")
+            print(f"Длина: {len(password)} символов")
+            print(f"Энтропия: {entropy:.2f} бит")
+            print(f"Стойкость: {strength}")
+            print(f"Рекомендация: {recommendation}")
+            
+            # Дополнительная информация
+            has_lower = any(c.islower() for c in password)
+            has_upper = any(c.isupper() for c in password)
+            has_digit = any(c.isdigit() for c in password)
+            has_symbol = any(c in string.punctuation for c in password)
+            
+            print("\nСостав пароля:")
+            print(f"  • Строчные буквы: {'✓' if has_lower else '✗'}")
+            print(f"  • Заглавные буквы: {'✓' if has_upper else '✗'}")
+            print(f"  • Цифры: {'✓' if has_digit else '✗'}")
+            print(f"  • Спецсимволы: {'✓' if has_symbol else '✗'}")
+            print("=" * 60)
+        
+        elif choice == '3':
+            print("До свидания!")
+            break
+        
+        else:
+            print("Неверный выбор. Попробуйте снова.")
+
+if __name__ == "__main__":
+    main()
