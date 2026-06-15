@@ -1,0 +1,372 @@
+"""
+6. Атака перебором на слабый пароль
+Дана хеш-функция hash = (sum(ord(c) for c in pwd) % 10000). Написать
+переборщик, восстанавливающий пароль из 4 цифр по его хешу. Оценить
+сложность.
+
+"""
+import time
+import itertools
+import string
+from typing import Optional, Tuple, List
+
+def simple_hash(password: str) -> int:
+    """
+    Простая хеш-функция: сумма кодов символов по модулю 10000.
+    
+    Args:
+        password: пароль в виде строки
+    
+    Returns:
+        int: хеш-значение от 0 до 9999
+    """
+    return sum(ord(c) for c in password) % 10000
+
+def brute_force_4_digits(target_hash: int) -> Optional[str]:
+    """
+    Перебор всех 4-значных числовых паролей (0000-9999).
+    
+    Args:
+        target_hash: целевое хеш-значение
+    
+    Returns:
+        str: найденный пароль или None
+    """
+    print(f"Начинаем перебор паролей из 4 цифр для хеша {target_hash}...")
+    
+    start_time = time.time()
+    attempts = 0
+    
+    # Перебираем все числа от 0 до 9999
+    for num in range(10000):
+        # Форматируем как 4-значное число с ведущими нулями
+        password = f"{num:04d}"
+        attempts += 1
+        
+        # Вычисляем хеш
+        hash_value = simple_hash(password)
+        
+        # Проверяем совпадение
+        if hash_value == target_hash:
+            elapsed_time = time.time() - start_time
+            print(f"✓ Пароль найден!")
+            print(f"  Пароль: {password}")
+            print(f"  Попыток: {attempts}")
+            print(f"  Время: {elapsed_time:.6f} секунд")
+            return password
+    
+    elapsed_time = time.time() - start_time
+    print(f"✗ Пароль не найден!")
+    print(f"  Попыток: {attempts}")
+    print(f"  Время: {elapsed_time:.6f} секунд")
+    return None
+
+def brute_force_4_digits_optimized(target_hash: int) -> Optional[str]:
+    """
+    Оптимизированная версия перебора 4-значных паролей с ранним выходом.
+    """
+    print(f"\n[Оптимизированный] Поиск пароля для хеша {target_hash}...")
+    
+    start_time = time.time()
+    
+    # Используем генератор для экономии памяти
+    for num in range(10000):
+        password = f"{num:04d}"
+        if simple_hash(password) == target_hash:
+            elapsed_time = time.time() - start_time
+            print(f"✓ Найден: {password} за {elapsed_time:.6f} сек")
+            return password
+    
+    return None
+
+def brute_force_any_length(target_hash: int, max_length: int = 6) -> Optional[str]:
+    """
+    Перебор паролей разной длины (цифры только).
+    
+    Args:
+        target_hash: целевой хеш
+        max_length: максимальная длина пароля
+    
+    Returns:
+        str: найденный пароль
+    """
+    print(f"\nПеребор паролей длины 1-{max_length} (только цифры)...")
+    
+    start_time = time.time()
+    attempts = 0
+    
+    for length in range(1, max_length + 1):
+        # Для каждой длины перебираем все комбинации цифр
+        for combo in itertools.product('0123456789', repeat=length):
+            password = ''.join(combo)
+            attempts += 1
+            
+            if simple_hash(password) == target_hash:
+                elapsed_time = time.time() - start_time
+                print(f"✓ Пароль найден!")
+                print(f"  Пароль: {password}")
+                print(f"  Длина: {length}")
+                print(f"  Попыток: {attempts}")
+                print(f"  Время: {elapsed_time:.6f} секунд")
+                return password
+    
+    print(f"✗ Пароль не найден (проверено {attempts} вариантов)")
+    return None
+
+def brute_force_letters_digits(target_hash: int, max_length: int = 4) -> Optional[str]:
+    """
+    Перебор паролей из букв и цифр.
+    
+    Args:
+        target_hash: целевой хеш
+        max_length: максимальная длина пароля
+    """
+    charset = string.ascii_letters + string.digits  # a-z, A-Z, 0-9
+    print(f"\nПеребор паролей (буквы+цифры) длины 1-{max_length}...")
+    print(f"Размер набора символов: {len(charset)}")
+    
+    start_time = time.time()
+    attempts = 0
+    
+    for length in range(1, max_length + 1):
+        total_for_length = len(charset) ** length
+        print(f"  Проверяем пароли длины {length}... (всего {total_for_length:,} вариантов)")
+        
+        for combo in itertools.product(charset, repeat=length):
+            password = ''.join(combo)
+            attempts += 1
+            
+            if simple_hash(password) == target_hash:
+                elapsed_time = time.time() - start_time
+                print(f"\n✓ Пароль найден!")
+                print(f"  Пароль: {password}")
+                print(f"  Длина: {length}")
+                print(f"  Попыток: {attempts:,}")
+                print(f"  Время: {elapsed_time:.2f} секунд")
+                return password
+            
+            # Прогресс для длинных переборов
+            if attempts % 100000 == 0:
+                print(f"    Проверено {attempts:,} паролей...")
+    
+    print(f"\n✗ Пароль не найден (проверено {attempts:,} вариантов)")
+    return None
+
+def analyze_hash_collisions():
+    """
+    Анализ коллизий хеш-функции.
+    """
+    print("\n" + "=" * 70)
+    print("АНАЛИЗ КОЛЛИЗИЙ ХЕШ-ФУНКЦИИ")
+    print("=" * 70)
+    
+    # Собираем хеши для всех 4-значных паролей
+    hash_dict = {}
+    collisions = []
+    
+    print("Анализ 10000 паролей (0000-9999)...")
+    
+    for num in range(10000):
+        password = f"{num:04d}"
+        h = simple_hash(password)
+        
+        if h in hash_dict:
+            collisions.append((h, hash_dict[h], password))
+        else:
+            hash_dict[h] = password
+    
+    print(f"\nРезультаты анализа:")
+    print(f"  Всего паролей: 10,000")
+    print(f"  Уникальных хешей: {len(hash_dict)}")
+    print(f"  Коллизий: {len(collisions)}")
+    print(f"  Среднее количество паролей на хеш: {10000/len(hash_dict):.2f}")
+    
+    if collisions:
+        print(f"\nПримеры коллизий (разные пароли → одинаковый хеш):")
+        for i, (h, p1, p2) in enumerate(collisions[:5], 1):
+            print(f"  {i}. Хеш {h:4d}: '{p1}' и '{p2}'")
+    
+    return hash_dict, collisions
+
+def demonstrate_collision():
+    """
+    Демонстрация создания коллизии.
+    """
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ СОЗДАНИЯ КОЛЛИЗИИ")
+    print("=" * 70)
+    
+    # Исходный пароль
+    original = "1234"
+    original_hash = simple_hash(original)
+    
+    print(f"Исходный пароль: '{original}'")
+    print(f"Хеш: {original_hash}")
+    
+    # Ищем другой пароль с таким же хешем
+    print("\nПоиск другого пароля с таким же хешем...")
+    
+    for num in range(10000):
+        candidate = f"{num:04d}"
+        if candidate != original and simple_hash(candidate) == original_hash:
+            print(f"\nНайден коллизирующий пароль: '{candidate}'")
+            print(f"Проверка: simple_hash('{candidate}') = {simple_hash(candidate)}")
+            print(f"\nЭто означает, что оба пароля дают одинаковый хеш!")
+            print(f"Злоумышленник может использовать '{candidate}' вместо '{original}'")
+            return candidate
+    
+    print("Коллизия не найдена (что маловероятно для этого диапазона)")
+    return None
+
+def estimate_complexity():
+    """
+    Оценка сложности атаки перебором.
+    """
+    print("\n" + "=" * 70)
+    print("ОЦЕНКА СЛОЖНОСТИ АТАКИ ПЕРЕБОРОМ")
+    print("=" * 70)
+    
+    scenarios = [
+        ("4 цифры (0000-9999)", 10**4, 10000),
+        ("6 цифр (000000-999999)", 10**6, 1000000),
+        ("8 цифр", 10**8, 100000000),
+        ("4 буквы (только строчные)", 26**4, 456976),
+        ("4 символа (буквы+цифры)", 36**4, 1679616),
+        ("6 символов (буквы+цифры)", 36**6, 2176782336),
+        ("8 символов (буквы+цифры)", 36**8, 2821109907456),
+    ]
+    
+    # Предполагаемая скорость перебора (хешей в секунду)
+    hashes_per_second = 500000  # ~500 тысяч в секунду
+    
+    print(f"\nСкорость перебора: ~{hashes_per_second:,} паролей/сек")
+    print(f"\n{'Тип пароля':<30} {'Возможностей':<15} {'Макс. время':<15}")
+    print("-" * 60)
+    
+    for name, possibilities, approx in scenarios:
+        max_time = possibilities / hashes_per_second
+        if max_time < 60:
+            time_str = f"{max_time:.2f} сек"
+        elif max_time < 3600:
+            time_str = f"{max_time/60:.2f} мин"
+        elif max_time < 86400:
+            time_str = f"{max_time/3600:.2f} ч"
+        else:
+            time_str = f"{max_time/86400:.2f} дн"
+        
+        print(f"{name:<30} {possibilities:>13,}  {time_str:>15}")
+    
+    print("\nВЫВОДЫ:")
+    print("• 4-значные пароли взламываются мгновенно (< 0.1 сек)")
+    print("• 6-значные цифровые пароли взламываются за секунды")
+    print("• 8-значные цифровые пароли - за минуты")
+    print("• Буквенно-цифровые пароли существенно сложнее")
+    print("• Хеш-функция с модулем 10000 имеет максимум 10000 различных значений")
+    print("• Обязательно будут коллизии при большом количестве паролей")
+
+def main():
+    """Основная функция демонстрации"""
+    
+    print("=" * 70)
+    print("АТАКА ПЕРЕБОРОМ НА СЛАБЫЙ ПАРОЛЬ")
+    print("Хеш-функция: hash = sum(ord(c) for c in pwd) % 10000")
+    print("=" * 70)
+    
+    # 1. Демонстрация работы хеш-функции
+    print("\n1. ДЕМОНСТРАЦИЯ ХЕШ-ФУНКЦИИ")
+    print("-" * 50)
+    
+    test_passwords = ["0000", "1234", "9999", "0001", "1111"]
+    for pwd in test_passwords:
+        h = simple_hash(pwd)
+        print(f"  hash('{pwd}') = {h}")
+    
+    # 2. Атака перебором на конкретный хеш
+    print("\n2. АТАКА ПЕРЕБОРОМ")
+    print("-" * 50)
+    
+    # Выбираем целевой пароль
+    target_password = "1374"
+    target_hash = simple_hash(target_password)
+    
+    print(f"Целевой пароль (известен только хеш): ???")
+    print(f"Хеш целевого пароля: {target_hash}")
+    print()
+    
+    # Перебираем
+    found = brute_force_4_digits(target_hash)
+    
+    if found:
+        print(f"\nУспех! Пароль восстановлен: {found}")
+    
+    # 3. Анализ коллизий
+    analyze_hash_collisions()
+    
+    # 4. Демонстрация коллизии
+    demonstrate_collision()
+    
+    # 5. Оценка сложности
+    estimate_complexity()
+    
+    # 6. Дополнительные тесты
+    print("\n" + "=" * 70)
+    print("ДОПОЛНИТЕЛЬНЫЕ ТЕСТЫ")
+    print("=" * 70)
+    
+    # Тест с другим хешем
+    another_hash = 42
+    print(f"\nПоиск пароля для хеша {another_hash}:")
+    brute_force_4_digits(another_hash)
+    
+    # Тест с перебором разной длины
+    test_hash = simple_hash("42")
+    print(f"\nХеш пароля '42': {test_hash}")
+    brute_force_any_length(test_hash, max_length=3)
+    
+    # Визуализация распределения хешей
+    print("\n" + "=" * 70)
+    print("РАСПРЕДЕЛЕНИЕ ХЕШЕЙ ДЛЯ 10000 ПАРОЛЕЙ")
+    print("=" * 70)
+    
+    # Собираем статистику распределения
+    distribution = [0] * 10000
+    for num in range(10000):
+        pwd = f"{num:04d}"
+        h = simple_hash(pwd)
+        distribution[h] += 1
+    
+    # Показываем статистику
+    print(f"\nСтатистика распределения:")
+    print(f"  Минимально паролей на хеш: {min(distribution)}")
+    print(f"  Максимально паролей на хеш: {max(distribution)}")
+    print(f"  Среднее: {sum(distribution)/10000:.2f}")
+    print(f"  Пустых хешей: {distribution.count(0)}")
+    
+    # Показываем гистограмму (топ-10 самых частых хешей)
+    print(f"\nТоп-10 самых частых хешей:")
+    top_hashes = sorted([(h, count) for h, count in enumerate(distribution)], 
+                       key=lambda x: x[1], reverse=True)[:10]
+    for h, count in top_hashes:
+        bar = '█' * (count // 2)
+        print(f"  Хеш {h:4d}: {count:3d} паролей {bar}")
+    
+    # Заключение
+    print("\n" + "=" * 70)
+    print("ЗАКЛЮЧЕНИЕ И РЕКОМЕНДАЦИИ")
+    print("=" * 70)
+    print("""
+    1. Слабые пароли (4 цифры) взламываются мгновенно
+    2. Хеш-функция с малым диапазоном (10000) имеет много коллизий
+    3. Для надёжности:
+       - Используйте длинные пароли (12+ символов)
+       - Используйте разные типы символов
+       - Используйте криптостойкие хеш-функции (SHA-256, bcrypt)
+       - Добавляйте соль (salt) к паролям
+    4. Реальная стойкость зависит от пространства паролей:
+       - 4 цифры: 10^4 комбинаций - НЕНАДЁЖНО
+       - 8 цифр: 10^8 комбинаций - перебор за минуты
+       - 8 символов (буквы+цифры): 36^8 ≈ 2.8·10^12 - надёжно
+    """)
+
+if __name__ == "__main__":
+    main()
