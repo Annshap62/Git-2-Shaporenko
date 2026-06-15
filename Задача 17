@@ -1,0 +1,461 @@
+"""
+17. Стелганорафия в изображении (LSB)
+Спрятать текстовое сообщение в младшие биты RGB массива (библиотека PIL).
+Извлечь сообщение. Проверить, что визуально изображение почти не
+изменилось.
+
+"""
+from PIL import Image
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import Tuple, Optional
+import os
+
+class LSBSteganography:
+    """Класс для сокрытия и извлечения данных в изображениях методом LSB"""
+    
+    def __init__(self):
+        self.bits_per_channel = 1  # Количество младших битов для кодирования
+        
+    def text_to_bits(self, text: str) -> str:
+        """Преобразует текст в битовую строку с маркером конца"""
+        # Добавляем специальный маркер конца сообщения (8 бит = 0xFF)
+        text_bytes = text.encode('utf-8')
+        bits = ''.join(format(byte, '08b') for byte in text_bytes)
+        # Добавляем маркер конца: 8 бит единиц
+        bits += '11111111'
+        return bits
+    
+    def bits_to_text(self, bits: str) -> str:
+        """Преобразует битовую строку обратно в текст"""
+        # Разбиваем на байты
+        bytes_list = []
+        for i in range(0, len(bits), 8):
+            byte = bits[i:i+8]
+            if len(byte) == 8:
+                bytes_list.append(int(byte, 2))
+        
+        # Преобразуем в байты
+        data_bytes = bytes(bytes_list)
+        
+        # Ищем маркер конца (0xFF)
+        end_marker = data_bytes.find(b'\xff')
+        if end_marker != -1:
+            data_bytes = data_bytes[:end_marker]
+        
+        # Декодируем в строку
+        try:
+            return data_bytes.decode('utf-8')
+        except:
+            return "Ошибка декодирования"
+    
+    def hide_message(self, image_path: str, message: str, output_path: str) -> bool:
+        """
+        Прячет сообщение в изображение методом LSB.
+        
+        Args:
+            image_path: путь к исходному изображению
+            message: текст сообщения
+            output_path: путь для сохранения результата
+        
+        Returns:
+            bool: успех операции
+        """
+        print(f"\n📁 Загрузка изображения: {image_path}")
+        
+        # Открываем изображение
+        img = Image.open(image_path)
+        img = img.convert('RGB')  # Конвертируем в RGB
+        pixels = np.array(img)
+        
+        original_shape = pixels.shape
+        print(f"   Размер изображения: {pixels.shape[1]}x{pixels.shape[0]}")
+        
+        # Преобразуем сообщение в биты
+        bits = self.text_to_bits(message)
+        total_bits_needed = len(bits)
+        
+        # Проверяем вместимость
+        max_bits = pixels.size  # Каждый пиксель имеет 3 канала (R,G,B)
+        if total_bits_needed > max_bits:
+            print(f"❌ Ошибка: сообщение слишком большое!")
+            print(f"   Нужно битов: {total_bits_needed}")
+            print(f"   Максимум: {max_bits}")
+            return False
+        
+        print(f"✓ Сообщение: '{message}'")
+        print(f"   Длина сообщения: {len(message)} символов")
+        print(f"   Бит для кодирования: {total_bits_needed}")
+        print(f"   Свободное место: {max_bits - total_bits_needed} бит")
+        
+        # Кодируем биты в младшие биты пикселей
+        flat_pixels = pixels.flatten()
+        bit_index = 0
+        
+        for i in range(len(flat_pixels)):
+            if bit_index < total_bits_needed:
+                # Очищаем младший бит и устанавливаем нужное значение
+                flat_pixels[i] = (flat_pixels[i] & 0xFE) | int(bits[bit_index])
+                bit_index += 1
+            else:
+                break
+        
+        # Восстанавливаем форму массива
+        encoded_pixels = flat_pixels.reshape(original_shape)
+        
+        # Сохраняем изображение
+        encoded_img = Image.fromarray(encoded_pixels.astype('uint8'))
+        encoded_img.save(output_path)
+        
+        print(f"✓ Сообщение успешно скрыто!")
+        print(f"   Сохранено в: {output_path}")
+        
+        return True
+    
+    def extract_message(self, image_path: str) -> Optional[str]:
+        """
+        Извлекает скрытое сообщение из изображения.
+        
+        Args:
+            image_path: путь к изображению со скрытым сообщением
+        
+        Returns:
+            str: извлеченное сообщение или None
+        """
+        print(f"\n📁 Чтение изображения: {image_path}")
+        
+        # Открываем изображение
+        img = Image.open(image_path)
+        img = img.convert('RGB')
+        pixels = np.array(img)
+        
+        print(f"   Размер изображения: {pixels.shape[1]}x{pixels.shape[0]}")
+        
+        # Извлекаем младшие биты
+        flat_pixels = pixels.flatten()
+        extracted_bits = []
+        
+        for value in flat_pixels:
+            # Извлекаем младший бит
+            extracted_bits.append(str(value & 1))
+            
+            # Периодически проверяем маркер конца
+            if len(extracted_bits) % 8 == 0:
+                # Конвертируем последние 8 бит в байт
+                last_byte = ''.join(extracted_bits[-8:])
+                if last_byte == '11111111':  # Маркер конца
+                    # Убираем маркер и конвертируем
+                    bits = ''.join(extracted_bits[:-8])
+                    message = self.bits_to_text(bits)
+                    print(f"✓ Сообщение найдено!")
+                    print(f"   Извлечено битов: {len(bits)}")
+                    print(f"   Длина сообщения: {len(message)} символов")
+                    return message
+        
+        print("❌ Сообщение не найдено (маркер конца не обнаружен)")
+        return None
+    
+    def compare_images(self, original_path: str, encoded_path: str):
+        """
+        Сравнивает исходное и закодированное изображения.
+        """
+        print(f"\n📊 Сравнение изображений:")
+        
+        # Загружаем изображения
+        original = Image.open(original_path).convert('RGB')
+        encoded = Image.open(encoded_path).convert('RGB')
+        
+        original_array = np.array(original, dtype=np.int16)
+        encoded_array = np.array(encoded, dtype=np.int16)
+        
+        # Вычисляем разницу
+        diff = np.abs(original_array - encoded_array)
+        
+        print(f"   Максимальная разница: {np.max(diff)}")
+        print(f"   Средняя разница: {np.mean(diff):.3f}")
+        print(f"   Изменено пикселей: {np.sum(diff > 0)} из {diff.size}")
+        print(f"   Процент изменения: {(np.sum(diff > 0) / diff.size) * 100:.2f}%")
+        
+        # Визуализируем разницу
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        
+        # Оригинал
+        axes[0].imshow(original)
+        axes[0].set_title('Оригинал')
+        axes[0].axis('off')
+        
+        # Закодированное
+        axes[1].imshow(encoded)
+        axes[1].set_title('Скрытым сообщением')
+        axes[1].axis('off')
+        
+        # Разница (увеличена для наглядности)
+        diff_visual = np.clip(diff * 50, 0, 255)  # Увеличиваем контраст
+        axes[2].imshow(diff_visual.astype('uint8'))
+        axes[2].set_title('Разница (увеличена в 50 раз)')
+        axes[2].axis('off')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return diff
+
+def create_test_image():
+    """Создает тестовое изображение для демонстрации"""
+    print("\n🎨 Создание тестового изображения...")
+    
+    # Создаем градиентное изображение
+    width, height = 400, 300
+    img = Image.new('RGB', (width, height))
+    pixels = img.load()
+    
+    # Заполняем градиентом
+    for x in range(width):
+        for y in range(height):
+            r = (x * 255) // width
+            g = (y * 255) // height
+            b = ((x + y) * 255) // (width + height)
+            pixels[x, y] = (r, g, b)
+    
+    test_path = "test_image.png"
+    img.save(test_path)
+    print(f"✓ Создано тестовое изображение: {test_path} (400x300)")
+    return test_path
+
+def demonstrate_with_real_image():
+    """Демонстрация на реальном изображении"""
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ НА РЕАЛЬНОМ ИЗОБРАЖЕНИИ")
+    print("=" * 70)
+    
+    # Создаем тестовое изображение
+    test_image = create_test_image()
+    
+    # Создаем экземпляр стеганографии
+    stego = LSBSteganography()
+    
+    # Сообщение для сокрытия
+    secret_message = "Прикладная информатика! Это секретное сообщение, скрытое в изображении. 🚀"
+    
+    # Прячем сообщение
+    output_image = "test_image_with_secret.png"
+    success = stego.hide_message(test_image, secret_message, output_image)
+    
+    if success:
+        # Извлекаем сообщение
+        extracted = stego.extract_message(output_image)
+        
+        if extracted:
+            print(f"\n📝 ИЗВЛЕЧЕННОЕ СООБЩЕНИЕ:")
+            print(f"   {extracted}")
+            
+            # Проверяем совпадение
+            if extracted == secret_message:
+                print(f"\n✅ УСПЕХ! Сообщение извлечено корректно!")
+            else:
+                print(f"\n❌ ОШИБКА! Сообщения не совпадают!")
+                print(f"   Оригинал: {secret_message}")
+                print(f"   Извлечено: {extracted}")
+        
+        # Сравниваем изображения
+        stego.compare_images(test_image, output_image)
+    
+    return test_image, output_image
+
+def demonstrate_capacity():
+    """Демонстрация максимальной вместимости"""
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ ВМЕСТИМОСТИ")
+    print("=" * 70)
+    
+    sizes = [(100, 100), (200, 200), (500, 500), (1000, 1000)]
+    
+    print(f"\n{'Размер':<15} {'Пикселей':<12} {'Бит':<12} {'Байт':<12} {'Символов':<12}")
+    print("-" * 65)
+    
+    for width, height in sizes:
+        pixels = width * height
+        bits = pixels * 3  # 3 канала RGB
+        bytes_capacity = bits // 8
+        chars_capacity = bytes_capacity // 4  # Примерно 4 байта на символ в UTF-8
+        
+        print(f"{width}x{height:<10} {pixels:>10,}  {bits:>10,}  {bytes_capacity:>10,}  {chars_capacity:>10,}")
+
+def demonstrate_bit_planes():
+    """Демонстрация битовых плоскостей"""
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ БИТОВЫХ ПЛОСКОСТЕЙ")
+    print("=" * 70)
+    
+    # Создаем простое изображение
+    img = Image.new('RGB', (200, 200))
+    pixels = np.array(img)
+    
+    # Заполняем паттерном
+    for i in range(200):
+        for j in range(200):
+            pixels[i, j] = [i % 256, j % 256, (i + j) % 256]
+    
+    fig, axes = plt.subplots(2, 4, figsize=(12, 6))
+    
+    # Показываем различные битовые плоскости
+    for bit in range(8):
+        row = bit // 4
+        col = bit % 4
+        
+        # Извлекаем битовую плоскость для красного канала
+        bit_plane = (pixels[:, :, 0] >> bit) & 1
+        bit_plane = bit_plane * 255
+        
+        axes[row, col].imshow(bit_plane, cmap='gray')
+        axes[row, col].set_title(f'Бит {bit}')
+        axes[row, col].axis('off')
+    
+    plt.suptitle('Битовые плоскости изображения (красный канал)', fontsize=14)
+    plt.tight_layout()
+    plt.show()
+    
+    print("\nПояснение:")
+    print("- Младшие биты (0-2) содержат меньше информации о структуре изображения")
+    print("- Старшие биты (5-7) содержат основную визуальную информацию")
+    print("- Стеганография использует младшие биты, так как их изменение наименее заметно")
+
+def demonstrate_lsb_effect():
+    """Демонстрация эффекта изменения LSB"""
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ ЭФФЕКТА ИЗМЕНЕНИЯ LSB")
+    print("=" * 70)
+    
+    # Создаем градиент
+    gradient = np.zeros((100, 500, 3), dtype=np.uint8)
+    for i in range(500):
+        value = i * 255 // 500
+        gradient[:, i] = [value, value, value]
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 6))
+    
+    # Оригинал
+    axes[0, 0].imshow(gradient)
+    axes[0, 0].set_title('Оригинальный градиент')
+    axes[0, 0].axis('off')
+    
+    # Со скрытым сообщением
+    modified = gradient.copy()
+    # Внедряем случайные биты в LSB
+    for i in range(modified.size):
+        modified.flat[i] = (modified.flat[i] & 0xFE) | (np.random.randint(0, 2))
+    
+    axes[0, 1].imshow(modified)
+    axes[0, 1].set_title('С изменёнными LSB')
+    axes[0, 1].axis('off')
+    
+    # Разница
+    diff = np.abs(modified.astype(int) - gradient.astype(int)) * 255
+    axes[1, 0].imshow(diff.clip(0, 255).astype('uint8'), cmap='hot')
+    axes[1, 0].set_title('Разница (увеличена)')
+    axes[1, 0].axis('off')
+    
+    # Гистограмма
+    axes[1, 1].hist(gradient.flatten(), bins=50, alpha=0.5, label='Оригинал')
+    axes[1, 1].hist(modified.flatten(), bins=50, alpha=0.5, label='С LSB')
+    axes[1, 1].set_title('Гистограмма яркости')
+    axes[1, 1].legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    print("\nВыводы:")
+    print("- Визуально изображения практически идентичны")
+    print("- Изменения заметны только при сильном увеличении контраста")
+    print("- Гистограммы почти не отличаются")
+    print("- Метод LSB незаметен для человеческого глаза")
+
+def main():
+    """Основная функция"""
+    print("=" * 70)
+    print("СТЕГАНОГРАФИЯ В ИЗОБРАЖЕНИЯХ (МЕТОД LSB)")
+    print("Сокрытие данных в младших битах RGB-каналов")
+    print("=" * 70)
+    
+    # 1. Теоретическое введение
+    print("\n📖 ТЕОРЕТИЧЕСКОЕ ВВЕДЕНИЕ")
+    print("-" * 70)
+    print("""
+    Метод LSB (Least Significant Bit):
+    - Использует младшие (наименее значимые) биты пикселей
+    - Человеческий глаз не замечает изменения в 1-2 битах
+    - Каждый пиксель RGB имеет 3 канала × 8 бит = 24 бита
+    - Мы заменяем только 1 бит в каждом канале
+    - Вместимость: (ширина × высота × 3) / 8 байт
+    """)
+    
+    # 2. Демонстрация битовых плоскостей
+    demonstrate_bit_planes()
+    
+    # 3. Демонстрация эффекта изменения LSB
+    demonstrate_lsb_effect()
+    
+    # 4. Демонстрация вместимости
+    demonstrate_capacity()
+    
+    # 5. Практическая демонстрация
+    test_image, encoded_image = demonstrate_with_real_image()
+    
+    # 6. Дополнительные тесты
+    print("\n" + "=" * 70)
+    print("ДОПОЛНИТЕЛЬНЫЕ ТЕСТЫ")
+    print("=" * 70)
+    
+    # Тест с разными сообщениями
+    stego = LSBSteganography()
+    messages = [
+        "Короткое сообщение",
+        "Это более длинное сообщение, которое должно поместиться в изображении",
+        "Secret 🚀 🌟 🎯"  # С эмодзи
+    ]
+    
+    test_img = "test_image.png"
+    
+    for i, msg in enumerate(messages):
+        print(f"\nТест {i+1}:")
+        output = f"test_with_msg_{i}.png"
+        if stego.hide_message(test_img, msg, output):
+            extracted = stego.extract_message(output)
+            if extracted == msg:
+                print(f"  ✅ Успех!")
+            else:
+                print(f"  ❌ Ошибка!")
+    
+    # 7. Очистка
+    print("\n" + "=" * 70)
+    print("ЗАКЛЮЧЕНИЕ")
+    print("=" * 70)
+    print("""
+    Преимущества LSB-стеганографии:
+    ✓ Простота реализации
+    ✓ Незаметность для человеческого глаза
+    ✓ Высокая вместимость (до 12.5% от размера изображения)
+    ✓ Стойкость к JPEG-сжатию (при использовании в несжатых форматах)
+    
+    Недостатки:
+    ✗ Уязвимость к статистическому анализу
+    ✗ Потеря данных при сжатии с потерями
+    ✗ Заметность при большом объёме скрытых данных
+    
+    Рекомендации:
+    • Использовать форматы без сжатия (PNG, BMP)
+    • Не превышать 10-15% от ёмкости
+    • Для повышения скрытности использовать LSB в каналах с большим шумом
+    • Комбинировать с шифрованием для повышения безопасности
+    """)
+    
+    # Предложение сохранить результаты
+    print("\n💾 Сгенерированные файлы:")
+    print(f"   - test_image.png (оригинал)")
+    print(f"   - test_image_with_secret.png (со скрытым сообщением)")
+    print(f"   - test_with_msg_0.png, test_with_msg_1.png, test_with_msg_2.png")
+    
+    print("\n✨ Демонстрация завершена!")
+
+if __name__ == "__main__":
+    main()
