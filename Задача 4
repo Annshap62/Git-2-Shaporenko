@@ -1,0 +1,266 @@
+4. Шифр гаммирования
+Реализовать шифрование/дешифрование текста методом XOR с ключом
+(гаммой). Продемонстрировать работу на примере фразы "Прикладная
+информатика" в UTF-8.
+
+def gamma_cipher(text, key, mode='encrypt'):
+    """
+    Шифрование/дешифрование методом XOR с гаммой.
+    
+    Args:
+        text: исходный текст (для шифрования) или зашифрованные байты (для дешифрования)
+        key: ключ (строка или байты)
+        mode: 'encrypt' или 'decrypt'
+    
+    Returns:
+        str или bytes: результат шифрования/дешифрования
+    """
+    # Преобразуем текст в байты UTF-8
+    if mode == 'encrypt':
+        text_bytes = text.encode('utf-8')
+    else:
+        text_bytes = text if isinstance(text, bytes) else text.encode('utf-8')
+    
+    # Преобразуем ключ в байты (если строка)
+    if isinstance(key, str):
+        key_bytes = key.encode('utf-8')
+    else:
+        key_bytes = key
+    
+    # Повторяем ключ, чтобы он соответствовал длине текста
+    key_repeated = (key_bytes * (len(text_bytes) // len(key_bytes) + 1))[:len(text_bytes)]
+    
+    # XOR шифрование
+    result_bytes = bytes(a ^ b for a, b in zip(text_bytes, key_repeated))
+    
+    if mode == 'encrypt':
+        return result_bytes  # Возвращаем байты для шифротекста
+    else:
+        return result_bytes.decode('utf-8')  # Возвращаем строку для дешифрованного текста
+
+def bytes_to_hex(data):
+    """Преобразует байты в hex-строку для отображения"""
+    return ' '.join(f'{b:02x}' for b in data)
+
+def bytes_to_binary(data):
+    """Преобразует байты в двоичную строку для отображения"""
+    return ' '.join(f'{b:08b}' for b in data)
+
+def demonstrate_gamma_cipher():
+    """Демонстрация работы шифра гаммирования"""
+    
+    print("=" * 80)
+    print("ШИФР ГАММИРОВАНИЯ (XOR)")
+    print("=" * 80)
+    
+    # Исходные данные
+    original_text = "Прикладная информатика"
+    key = "КЛЮЧ"  # Ключ для гаммирования
+    
+    print("\n1. Исходные данные:")
+    print(f"   Текст: {original_text}")
+    print(f"   Ключ: {key}")
+    print(f"   Длина текста: {len(original_text)} символов")
+    print(f"   Длина ключа: {len(key)} символов")
+    
+    # Показываем UTF-8 представление
+    text_utf8 = original_text.encode('utf-8')
+    print(f"\n2. UTF-8 представление текста:")
+    print(f"   Байты (hex): {bytes_to_hex(text_utf8)}")
+    print(f"   Байты (bin): {bytes_to_binary(text_utf8)}")
+    
+    # Шифрование
+    print("\n" + "=" * 80)
+    print("3. ШИФРОВАНИЕ")
+    print("=" * 80)
+    
+    encrypted = gamma_cipher(original_text, key, mode='encrypt')
+    print(f"\n   Зашифрованные данные (байты):")
+    print(f"   Hex: {bytes_to_hex(encrypted)}")
+    print(f"   Bin: {bytes_to_binary(encrypted)}")
+    
+    # Пробуем интерпретировать как текст (получится "мусор")
+    try:
+        encrypted_as_text = encrypted.decode('utf-8', errors='replace')
+        print(f"\n   Попытка прочитать как текст: {encrypted_as_text}")
+    except:
+        pass
+    
+    # Дешифрование
+    print("\n" + "=" * 80)
+    print("4. ДЕШИФРОВАНИЕ")
+    print("=" * 80)
+    
+    decrypted = gamma_cipher(encrypted, key, mode='decrypt')
+    print(f"\n   Дешифрованный текст: {decrypted}")
+    
+    # Проверка
+    print("\n" + "=" * 80)
+    print("5. ПРОВЕРКА")
+    print("=" * 80)
+    
+    if decrypted == original_text:
+        print("\n   ✓ УСПЕХ! Текст успешно зашифрован и дешифрован")
+    else:
+        print("\n   ✗ ОШИБКА! Текст не совпадает")
+    
+    print(f"\n   Исходный текст:    {original_text}")
+    print(f"   Дешифрованный:     {decrypted}")
+    
+    return encrypted, original_text, key
+
+def demonstrate_with_different_keys():
+    """Демонстрация с разными ключами"""
+    
+    print("\n" + "=" * 80)
+    print("ДЕМОНСТРАЦИЯ С РАЗНЫМИ КЛЮЧАМИ")
+    print("=" * 80)
+    
+    text = "Прикладная информатика"
+    
+    keys = ["А", "КЛЮЧ", "СЕКРЕТНЫЙ_КЛЮЧ_123"]
+    
+    for key in keys:
+        print(f"\n--- Ключ: '{key}' (длина: {len(key)}) ---")
+        
+        # Шифруем
+        encrypted = gamma_cipher(text, key, mode='encrypt')
+        
+        # Дешифруем
+        decrypted = gamma_cipher(encrypted, key, mode='decrypt')
+        
+        print(f"   Зашифровано (hex первых 16 байт): {bytes_to_hex(encrypted[:16])}...")
+        print(f"   Дешифровано: {decrypted}")
+        print(f"   Совпадение: {'✓' if decrypted == text else '✗'}")
+
+def demonstrate_wrong_key():
+    """Демонстрация использования неправильного ключа"""
+    
+    print("\n" + "=" * 80)
+    print("ДЕМОНСТРАЦИЯ С НЕПРАВИЛЬНЫМ КЛЮЧОМ")
+    print("=" * 80)
+    
+    text = "Прикладная информатика"
+    correct_key = "КЛЮЧ"
+    wrong_key = "НЕВЕРНЫЙ"
+    
+    print(f"\nИсходный текст: {text}")
+    print(f"Правильный ключ: '{correct_key}'")
+    print(f"Неправильный ключ: '{wrong_key}'")
+    
+    # Шифруем правильным ключом
+    encrypted = gamma_cipher(text, correct_key, mode='encrypt')
+    
+    # Пытаемся расшифровать неправильным ключом
+    decrypted_wrong = gamma_cipher(encrypted, wrong_key, mode='decrypt')
+    
+    print(f"\nРасшифровка НЕПРАВИЛЬНЫМ ключом:")
+    print(f"   Результат: {decrypted_wrong}")
+    
+    # Показываем разницу
+    original_bytes = text.encode('utf-8')
+    wrong_bytes = decrypted_wrong.encode('utf-8')
+    
+    print(f"\nСравнение (первые 20 байт):")
+    print(f"   Оригинал:    {bytes_to_hex(original_bytes[:20])}")
+    print(f"   С ошибкой:   {bytes_to_hex(wrong_bytes[:20])}")
+
+class GammaCipher:
+    """Класс для работы с шифром гаммирования"""
+    
+    def __init__(self, key):
+        """
+        Инициализация шифра с заданным ключом.
+        
+        Args:
+            key: ключ для шифрования
+        """
+        self.key = key
+        if isinstance(key, str):
+            self.key_bytes = key.encode('utf-8')
+        else:
+            self.key_bytes = key
+    
+    def encrypt(self, text):
+        """Шифрование текста"""
+        return gamma_cipher(text, self.key_bytes, mode='encrypt')
+    
+    def decrypt(self, ciphertext):
+        """Дешифрование текста"""
+        return gamma_cipher(ciphertext, self.key_bytes, mode='decrypt')
+    
+    def process_file(self, input_file, output_file, mode='encrypt'):
+        """
+        Шифрование/дешифрование файла.
+        
+        Args:
+            input_file: путь к входному файлу
+            output_file: путь к выходному файлу
+            mode: 'encrypt' или 'decrypt'
+        """
+        with open(input_file, 'rb') as f:
+            data = f.read()
+        
+        # XOR с повторяющимся ключом
+        key_repeated = (self.key_bytes * (len(data) // len(self.key_bytes) + 1))[:len(data)]
+        result = bytes(a ^ b for a, b in zip(data, key_repeated))
+        
+        with open(output_file, 'wb') as f:
+            f.write(result)
+        
+        print(f"Файл {input_file} -> {output_file} ({mode}ed)")
+
+def main():
+    """Основная функция демонстрации"""
+    
+    # Основная демонстрация
+    encrypted, original, key = demonstrate_gamma_cipher()
+    
+    # Демонстрация с разными ключами
+    demonstrate_with_different_keys()
+    
+    # Демонстрация с неправильным ключом
+    demonstrate_wrong_key()
+    
+    # Дополнительные примеры
+    print("\n" + "=" * 80)
+    print("ДОПОЛНИТЕЛЬНЫЕ ПРИМЕРЫ")
+    print("=" * 80)
+    
+    # Пример 1: Короткий ключ
+    print("\nПример с коротким ключом (повторение гаммы):")
+    text1 = "Прикладная информатика"
+    key1 = "1"
+    enc1 = gamma_cipher(text1, key1, 'encrypt')
+    dec1 = gamma_cipher(enc1, key1, 'decrypt')
+    print(f"   Ключ: '{key1}' (длина 1)")
+    print(f"   Результат: {dec1}")
+    
+    # Пример 2: Длинный ключ
+    print("\nПример с длинным ключом (не повторяется):")
+    text2 = "Прикладная информатика"
+    key2 = "Это очень длинный секретный ключ для шифрования"
+    enc2 = gamma_cipher(text2, key2, 'encrypt')
+    dec2 = gamma_cipher(enc2, key2, 'decrypt')
+    print(f"   Ключ: '{key2[:20]}...' (длина {len(key2)})")
+    print(f"   Результат: {dec2}")
+    
+    # Пример 3: Использование класса
+    print("\nИспользование класса GammaCipher:")
+    cipher = GammaCipher("МойСекретныйКлюч")
+    secret = cipher.encrypt("Прикладная информатика")
+    revealed = cipher.decrypt(secret)
+    print(f"   Зашифровано: {bytes_to_hex(secret)}")
+    print(f"   Расшифровано: {revealed}")
+    
+    print("\n" + "=" * 80)
+    print("ВАЖНЫЕ ЗАМЕЧАНИЯ:")
+    print("=" * 80)
+    print("1. XOR - симметричный алгоритм (шифрование = дешифрование)")
+    print("2. При одинаковом ключе: encrypt(encrypt(text)) = text")
+    print("3. Ключ должен быть случайным и длиной не меньше сообщения для абсолютной стойкости")
+    print("4. В реальном использовании нужен криптостойкий генератор псевдослучайных чисел")
+    print("5. Никогда не используйте один и тот же ключ для разных сообщений")
+
+if __name__ == "__main__":
+    main()
