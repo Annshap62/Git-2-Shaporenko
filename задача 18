@@ -1,0 +1,553 @@
+"""
+18. Анализатор метаданных файлов
+С помощью exifread или mutagen извлечь GPS-координаты, дату съёмки, модель
+устройства из фотографии. Если данные есть — вывести предупреждение о
+рисках приватности.
+"""
+
+import os
+import sys
+from datetime import datetime
+from typing import Dict, Optional, Tuple, List
+import json
+
+# Проверяем наличие необходимых библиотек
+try:
+    import exifread
+    from exifread import classes
+    EXIFREAD_AVAILABLE = True
+except ImportError:
+    EXIFREAD_AVAILABLE = False
+    print("⚠️  Библиотека exifread не установлена. Установите: pip install exifread")
+
+try:
+    from PIL import Image
+    from PIL.ExifTags import TAGS, GPSTAGS
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("⚠️  Библиотека Pillow не установлена. Установите: pip install Pillow")
+
+class MetadataAnalyzer:
+    """Анализатор метаданных файлов"""
+    
+    def __init__(self):
+        self.privacy_risks = []
+        self.metadata = {}
+    
+    def analyze_image(self, image_path: str) -> Dict:
+        """
+        Анализирует метаданные изображения.
+        
+        Args:
+            image_path: путь к изображению
+        
+        Returns:
+            Dict: словарь с извлечёнными метаданными
+        """
+        if not os.path.exists(image_path):
+            print(f"❌ Файл не найден: {image_path}")
+            return {}
+        
+        print(f"\n📸 Анализ изображения: {image_path}")
+        print(f"   Размер файла: {os.path.getsize(image_path) / 1024:.2f} KB")
+        
+        self.metadata = {
+            'filename': os.path.basename(image_path),
+            'file_size': os.path.getsize(image_path),
+            'basic_info': self._get_basic_info(image_path)
+        }
+        
+        # Пытаемся извлечь EXIF через разные библиотеки
+        if EXIFREAD_AVAILABLE:
+            self._extract_with_exifread(image_path)
+        
+        if PIL_AVAILABLE:
+            self._extract_with_pil(image_path)
+        
+        # Анализируем риски приватности
+        self._analyze_privacy_risks()
+        
+        return self.metadata
+    
+    def _get_basic_info(self, image_path: str) -> Dict:
+        """Получает базовую информацию о файле"""
+        stat = os.stat(image_path)
+        return {
+            'created': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S'),
+            'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            'accessed': datetime.fromtimestamp(stat.st_atime).strftime('%Y-%m-%d %H:%M:%S')
+        }
+    
+    def _extract_with_exifread(self, image_path: str):
+        """Извлекает метаданные с помощью exifread"""
+        print("\n📋 Извлечение EXIF данных (exifread)...")
+        
+        try:
+            with open(image_path, 'rb') as f:
+                tags = exifread.process_file(f, details=False)
+                
+                exif_data = {}
+                
+                for tag, value in tags.items():
+                    exif_data[tag] = str(value)
+                    
+                    # Извлекаем GPS координаты
+                    if 'GPS GPSLatitude' in tag:
+                        self.metadata['gps_latitude_raw'] = str(value)
+                    elif 'GPS GPSLongitude' in tag:
+                        self.metadata['gps_longitude_raw'] = str(value)
+                    elif 'GPS GPSLatitudeRef' in tag:
+                        self.metadata['gps_latitude_ref'] = str(value)
+                    elif 'GPS GPSLongitudeRef' in tag:
+                        self.metadata['gps_longitude_ref'] = str(value)
+                    
+                    # Извлекаем дату съёмки
+                    elif 'Image DateTime' in tag:
+                        self.metadata['date_taken'] = str(value)
+                    
+                    # Извлекаем модель устройства
+                    elif 'Image Model' in tag:
+                        self.metadata['camera_model'] = str(value)
+                    elif 'Image Make' in tag:
+                        self.metadata['camera_make'] = str(value)
+                
+                self.metadata['exif_data'] = exif_data
+                print(f"   ✓ Найдено {len(tags)} EXIF тегов")
+                
+                # Конвертируем GPS координаты
+                if 'gps_latitude_raw' in self.metadata:
+                    self._convert_gps_coordinates()
+                    
+        except Exception as e:
+            print(f"   ⚠️ Ошибка при чтении EXIF: {e}")
+    
+    def _extract_with_pil(self, image_path: str):
+        """Извлекает метаданные с помощью PIL"""
+        print("\n📋 Извлечение EXIF данных (PIL)...")
+        
+        try:
+            img = Image.open(image_path)
+            exif_data = img._getexif()
+            
+            if exif_data:
+                pil_metadata = {}
+                for tag_id, value in exif_data.items():
+                    tag_name = TAGS.get(tag_id, tag_id)
+                    pil_metadata[tag_name] = value
+                    
+                    # Извлекаем GPS
+                    if tag_name == 'GPSInfo':
+                        gps_info = {}
+                        for gps_tag in value:
+                            gps_name = GPSTAGS.get(gps_tag, gps_tag)
+                            gps_info[gps_name] = value[gps_tag]
+                        self.metadata['gps_info_pil'] = gps_info
+                        self._convert_gps_pil(gps_info)
+                    
+                    # Извлекаем дату
+                    elif tag_name == 'DateTime':
+                        self.metadata['date_taken_pil'] = value
+                    
+                    # Извлекаем модель
+                    elif tag_name == 'Model':
+                        self.metadata['camera_model_pil'] = value
+                    elif tag_name == 'Make':
+                        self.metadata['camera_make_pil'] = value
+                
+                self.metadata['pil_exif'] = pil_metadata
+                print(f"   ✓ Найдено {len(exif_data)} EXIF тегов")
+            else:
+                print("   ℹ️ EXIF данные отсутствуют")
+                
+        except Exception as e:
+            print(f"   ⚠️ Ошибка при чтении PIL: {e}")
+    
+    def _convert_gps_coordinates(self):
+        """Конвертирует GPS координаты из exifread в десятичный формат"""
+        try:
+            lat_raw = self.metadata.get('gps_latitude_raw', '')
+            lon_raw = self.metadata.get('gps_longitude_raw', '')
+            lat_ref = self.metadata.get('gps_latitude_ref', 'N')
+            lon_ref = self.metadata.get('gps_longitude_ref', 'E')
+            
+            if lat_raw and lon_raw:
+                # Парсим координаты
+                lat = self._parse_gps_exifread(lat_raw)
+                lon = self._parse_gps_exifread(lon_raw)
+                
+                # Конвертируем в десятичные градусы
+                lat_decimal = self._convert_to_decimal(lat, lat_ref)
+                lon_decimal = self._convert_to_decimal(lon, lon_ref)
+                
+                self.metadata['gps_coordinates'] = {
+                    'latitude': lat_decimal,
+                    'longitude': lon_decimal,
+                    'latitude_ref': lat_ref,
+                    'longitude_ref': lon_ref,
+                    'formatted': f"{lat_decimal:.6f}, {lon_decimal:.6f}",
+                    'google_maps_url': f"https://www.google.com/maps?q={lat_decimal:.6f},{lon_decimal:.6f}"
+                }
+                
+        except Exception as e:
+            print(f"   ⚠️ Ошибка конвертации GPS: {e}")
+    
+    def _convert_gps_pil(self, gps_info: Dict):
+        """Конвертирует GPS координаты из PIL в десятичный формат"""
+        try:
+            lat_parts = gps_info.get('GPSLatitude')
+            lon_parts = gps_info.get('GPSLongitude')
+            lat_ref = gps_info.get('GPSLatitudeRef', 'N')
+            lon_ref = gps_info.get('GPSLongitudeRef', 'E')
+            
+            if lat_parts and lon_parts:
+                lat_decimal = self._convert_gps_parts(lat_parts, lat_ref)
+                lon_decimal = self._convert_gps_parts(lon_parts, lon_ref)
+                
+                self.metadata['gps_coordinates_pil'] = {
+                    'latitude': lat_decimal,
+                    'longitude': lon_decimal,
+                    'formatted': f"{lat_decimal:.6f}, {lon_decimal:.6f}",
+                    'google_maps_url': f"https://www.google.com/maps?q={lat_decimal:.6f},{lon_decimal:.6f}"
+                }
+                
+        except Exception as e:
+            print(f"   ⚠️ Ошибка конвертации GPS PIL: {e}")
+    
+    def _parse_gps_exifread(self, gps_str: str) -> Tuple[float, float, float]:
+        """Парсит строку GPS из exifread"""
+        # Формат: [degrees, minutes, seconds]
+        import re
+        numbers = re.findall(r'(\d+(?:\.\d+)?)', gps_str)
+        if len(numbers) >= 3:
+            return (float(numbers[0]), float(numbers[1]), float(numbers[2]))
+        return (0, 0, 0)
+    
+    def _convert_gps_parts(self, parts, ref: str) -> float:
+        """Конвертирует части GPS в десятичные градусы"""
+        # parts может быть кортежем (градусы, минуты, секунды)
+        if len(parts) == 3:
+            degrees = float(parts[0])
+            minutes = float(parts[1])
+            seconds = float(parts[2])
+        else:
+            degrees = float(parts[0])
+            minutes = float(parts[1]) if len(parts) > 1 else 0
+            seconds = 0
+        
+        decimal = degrees + minutes/60 + seconds/3600
+        if ref in ['S', 'W']:
+            decimal = -decimal
+        return decimal
+    
+    def _convert_to_decimal(self, coords: Tuple[float, float, float], ref: str) -> float:
+        """Конвертирует (градусы, минуты, секунды) в десятичные градусы"""
+        degrees, minutes, seconds = coords
+        decimal = degrees + minutes/60 + seconds/3600
+        if ref in ['S', 'W']:
+            decimal = -decimal
+        return decimal
+    
+    def _analyze_privacy_risks(self):
+        """Анализирует риски приватности на основе метаданных"""
+        self.privacy_risks = []
+        
+        # Проверяем GPS координаты
+        if 'gps_coordinates' in self.metadata:
+            coords = self.metadata['gps_coordinates']
+            self.privacy_risks.append({
+                'risk': 'GPS_ЛОКАЦИЯ',
+                'severity': 'HIGH',
+                'details': f"Фотография содержит точные GPS координаты: {coords['formatted']}",
+                'url': coords['google_maps_url']
+            })
+        
+        if 'gps_coordinates_pil' in self.metadata:
+            coords = self.metadata['gps_coordinates_pil']
+            self.privacy_risks.append({
+                'risk': 'GPS_ЛОКАЦИЯ (PIL)',
+                'severity': 'HIGH',
+                'details': f"Фотография содержит точные GPS координаты: {coords['formatted']}",
+                'url': coords['google_maps_url']
+            })
+        
+        # Проверяем дату съёмки
+        if 'date_taken' in self.metadata or 'date_taken_pil' in self.metadata:
+            date = self.metadata.get('date_taken', self.metadata.get('date_taken_pil', ''))
+            self.privacy_risks.append({
+                'risk': 'ДАТА_СЪЁМКИ',
+                'severity': 'MEDIUM',
+                'details': f"Известна точная дата и время съёмки: {date}"
+            })
+        
+        # Проверяем модель устройства
+        model = self.metadata.get('camera_model', self.metadata.get('camera_model_pil', ''))
+        make = self.metadata.get('camera_make', self.metadata.get('camera_make_pil', ''))
+        
+        if model or make:
+            device_info = f"{make} {model}".strip()
+            self.privacy_risks.append({
+                'risk': 'МОДЕЛЬ_УСТРОЙСТВА',
+                'severity': 'LOW',
+                'details': f"Устройство: {device_info}"
+            })
+        
+        # Проверяем наличие другого ПО
+        if 'Software' in self.metadata.get('exif_data', {}):
+            software = self.metadata['exif_data']['Software']
+            self.privacy_risks.append({
+                'risk': 'ПРОГРАММНОЕ_ОБЕСПЕЧЕНИЕ',
+                'severity': 'LOW',
+                'details': f"Обработано с помощью: {software}"
+            })
+    
+    def print_metadata_report(self):
+        """Выводит отчёт о метаданных"""
+        print("\n" + "=" * 80)
+        print("📊 ОТЧЁТ О МЕТАДАННЫХ")
+        print("=" * 80)
+        
+        # Базовая информация
+        print(f"\n📁 Файл: {self.metadata.get('filename', 'Unknown')}")
+        print(f"   Размер: {self.metadata.get('file_size', 0) / 1024:.2f} KB")
+        
+        basic = self.metadata.get('basic_info', {})
+        print(f"   Создан: {basic.get('created', 'Unknown')}")
+        print(f"   Изменён: {basic.get('modified', 'Unknown')}")
+        
+        # Камера
+        camera_model = self.metadata.get('camera_model', self.metadata.get('camera_model_pil', 'Не найдено'))
+        camera_make = self.metadata.get('camera_make', self.metadata.get('camera_make_pil', ''))
+        if camera_make:
+            print(f"\n📷 Устройство: {camera_make} {camera_model}")
+        elif camera_model != 'Не найдено':
+            print(f"\n📷 Модель камеры: {camera_model}")
+        
+        # Дата съёмки
+        date_taken = self.metadata.get('date_taken', self.metadata.get('date_taken_pil', 'Не найдено'))
+        print(f"📅 Дата съёмки: {date_taken}")
+        
+        # GPS координаты
+        gps = self.metadata.get('gps_coordinates', self.metadata.get('gps_coordinates_pil', None))
+        if gps:
+            print(f"\n🌍 GPS КООРДИНАТЫ:")
+            print(f"   Широта: {gps['latitude']:.6f}")
+            print(f"   Долгота: {gps['longitude']:.6f}")
+            print(f"   Google Maps: {gps['google_maps_url']}")
+        
+        # Другие важные теги
+        if 'exif_data' in self.metadata:
+            important_tags = ['Image Artist', 'Image Copyright', 'Image Description', 
+                            'EXIF FNumber', 'EXIF ExposureTime', 'EXIF ISOSpeedRatings']
+            found_tags = {}
+            for tag in important_tags:
+                if tag in self.metadata['exif_data']:
+                    found_tags[tag] = self.metadata['exif_data'][tag]
+            
+            if found_tags:
+                print(f"\n📌 Другая важная информация:")
+                for tag, value in found_tags.items():
+                    print(f"   {tag}: {value}")
+    
+    def print_privacy_warning(self):
+        """Выводит предупреждение о рисках приватности"""
+        if not self.privacy_risks:
+            print("\n✅ РИСКИ ПРИВАТНОСТИ НЕ ОБНАРУЖЕНЫ")
+            print("   В изображении отсутствуют чувствительные метаданные.")
+            return
+        
+        print("\n" + "=" * 80)
+        print("⚠️  ПРЕДУПРЕЖДЕНИЕ О РИСКАХ ПРИВАТНОСТИ!")
+        print("=" * 80)
+        
+        print(f"\nОбнаружено {len(self.privacy_risks)} потенциальных утечек информации:\n")
+        
+        high_risks = [r for r in self.privacy_risks if r['severity'] == 'HIGH']
+        medium_risks = [r for r in self.privacy_risks if r['severity'] == 'MEDIUM']
+        low_risks = [r for r in self.privacy_risks if r['severity'] == 'LOW']
+        
+        if high_risks:
+            print("🔴 ВЫСОКИЙ РИСК:")
+            for risk in high_risks:
+                print(f"   • {risk['risk']}: {risk['details']}")
+                if 'url' in risk:
+                    print(f"     → {risk['url']}")
+        
+        if medium_risks:
+            print("\n🟡 СРЕДНИЙ РИСК:")
+            for risk in medium_risks:
+                print(f"   • {risk['risk']}: {risk['details']}")
+        
+        if low_risks:
+            print("\n🟢 НИЗКИЙ РИСК:")
+            for risk in low_risks:
+                print(f"   • {risk['risk']}: {risk['details']}")
+        
+        print("\n" + "=" * 80)
+        print("📋 РЕКОМЕНДАЦИИ ПО ЗАЩИТЕ ПРИВАТНОСТИ:")
+        print("=" * 80)
+        print("""
+1. Удалите метаданные перед публикацией фото:
+   - Используйте онлайн-инструменты (например, MetaDataRemover)
+   - В Windows: свойства файла → подробно → удалить свойства и личную информацию
+   - В Linux: exiftool -all= photo.jpg
+   - В Python: pillow + exifread для очистки
+
+2. Отключите геотеги в настройках камеры/телефона:
+   - iOS: Настройки → Конфиденциальность → Службы геолокации → Камера → Никогда
+   - Android: Камера → Настройки → Сохранять местоположение → Выключить
+
+3. Используйте программы для анонимизации:
+   - MAT2 (Metadata Anonymisation Toolkit)
+   - ExifTool
+   - ImageOptim (macOS)
+
+4. Перед отправкой проверяйте файлы на наличие метаданных
+        """)
+    
+    def generate_json_report(self, output_file: str = 'metadata_report.json'):
+        """Генерирует JSON-отчёт о метаданных"""
+        report = {
+            'metadata': self.metadata,
+            'privacy_risks': self.privacy_risks,
+            'analysis_date': datetime.now().isoformat()
+        }
+        
+        # Убираем бинарные данные для JSON
+        if 'exif_data' in report['metadata']:
+            # Конвертируем все значения в строки
+            report['metadata']['exif_data'] = {k: str(v) for k, v in report['metadata']['exif_data'].items()}
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False, default=str)
+        
+        print(f"\n💾 JSON-отчёт сохранён в: {output_file}")
+
+def create_sample_image_with_metadata():
+    """Создаёт тестовое изображение с метаданными (если PIL установлен)"""
+    if not PIL_AVAILABLE:
+        return None
+    
+    print("\n🎨 Создание тестового изображения с метаданными...")
+    
+    try:
+        from PIL import Image
+        from PIL import ImageDraw
+        
+        # Создаём изображение
+        img = Image.new('RGB', (800, 600), color='white')
+        draw = ImageDraw.Draw(img)
+        
+        # Рисуем что-нибудь
+        draw.rectangle([100, 100, 700, 500], outline='black', width=2)
+        draw.text((300, 250), "Test Image for Metadata Analysis", fill='black')
+        
+        # Сохраняем с метаданными
+        output_path = 'test_with_metadata.jpg'
+        
+        # Сохраняем с базовыми метаданными
+        img.save(output_path, quality=95)
+        
+        print(f"✓ Создано тестовое изображение: {output_path}")
+        print("  (для полноценного теста используйте реальное фото с GPS данными)")
+        
+        return output_path
+        
+    except Exception as e:
+        print(f"⚠️ Не удалось создать тестовое изображение: {e}")
+        return None
+
+def check_requirements():
+    """Проверяет наличие необходимых библиотек"""
+    missing = []
+    
+    if not EXIFREAD_AVAILABLE:
+        missing.append("exifread")
+    if not PIL_AVAILABLE:
+        missing.append("Pillow")
+    
+    if missing:
+        print("\n⚠️ Отсутствуют необходимые библиотеки:")
+        print(f"   {', '.join(missing)}")
+        print("\nУстановите их командой:")
+        print(f"   pip install {' '.join(missing)}")
+        print("\nИли установите все зависимости:")
+        print("   pip install exifread Pillow")
+        return False
+    
+    return True
+
+def main():
+    """Основная функция"""
+    print("=" * 80)
+    print("🔍 АНАЛИЗАТОР МЕТАДАННЫХ ФАЙЛОВ")
+    print("Извлечение GPS, даты съёмки и модели устройства")
+    print("=" * 80)
+    
+    # Проверяем зависимости
+    if not check_requirements():
+        sys.exit(1)
+    
+    # Создаём тестовое изображение при необходимости
+    test_image = None
+    if len(sys.argv) < 2:
+        print("\n📌 Использование: python script.py <путь_к_изображению>")
+        print("   Пример: python script.py photo.jpg")
+        
+        print("\n🎯 Создаю тестовое изображение для демонстрации...")
+        test_image = create_sample_image_with_metadata()
+        
+        if not test_image:
+            print("\n❌ Не удалось создать тестовое изображение.")
+            print("   Пожалуйста, укажите путь к существующему изображению.")
+            sys.exit(1)
+        
+        image_path = test_image
+    else:
+        image_path = sys.argv[1]
+    
+    # Анализируем изображение
+    analyzer = MetadataAnalyzer()
+    metadata = analyzer.analyze_image(image_path)
+    
+    if not metadata:
+        print("❌ Не удалось проанализировать изображение")
+        sys.exit(1)
+    
+    # Выводим отчёт
+    analyzer.print_metadata_report()
+    analyzer.print_privacy_warning()
+    
+    # Генерируем JSON отчёт
+    analyzer.generate_json_report()
+    
+    # Дополнительная информация
+    print("\n" + "=" * 80)
+    print("📚 ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ")
+    print("=" * 80)
+    print("""
+Что такое EXIF-данные?
+- Exchangeable Image File Format (EXIF) - стандарт метаданных для фотографий
+- Сохраняется автоматически большинством камер и смартфонов
+- Содержит: настройки камеры, дату/время, GPS, модель устройства и многое другое
+
+Почему это важно для приватности?
+- Злоумышленники могут отследить ваше местоположение
+- Дата съёмки может раскрыть режим дня или привычки
+- Модель устройства может указывать на вашу платёжеспособность
+
+Как удалить метаданные:
+1. exiftool -all= photo.jpg
+2. PIL: image.save('new.jpg', quality=95, exif=b'')
+3. Онлайн-сервисы (но не для приватных фото!)
+    """)
+    
+    # Очистка тестового файла при необходимости
+    if test_image and input(f"\n🗑️ Удалить тестовое изображение '{test_image}'? (y/n): ").lower() == 'y':
+        os.remove(test_image)
+        print(f"✓ Файл {test_image} удалён")
+    
+    print("\n✨ Анализ завершён!")
+
+if __name__ == "__main__":
+    main()
